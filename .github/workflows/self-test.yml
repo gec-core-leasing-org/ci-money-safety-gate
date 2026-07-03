@@ -1,0 +1,8 @@
+name: self-test
+on: { pull_request: {}, push: { branches: [main] } }
+jobs:
+  scripts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash gate/tests/run-all.sh

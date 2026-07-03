@@ -1,0 +1,40 @@
+name: money-safety-gate
+on:
+  workflow_call:
+    inputs:
+      go-version:
+        required: true
+        type: string
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout PR
+        uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: disable path quoting (non-ASCII filenames)
+        run: git config core.quotePath false
+      - name: checkout gate scripts
+        uses: actions/checkout@v4
+        with: { repository: gec-core-leasing-org/ci-money-safety-gate, ref: v1, path: .gate }
+      - name: diff range
+        run: |
+          echo "BASE_SHA=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_ENV"
+      - name: check no-new-float-on-money
+        run: bash .gate/gate/check-no-float.sh
+      - name: check money-file-needs-test
+        env:
+          GATE_SKIP_TEST: ${{ contains(github.event.pull_request.labels.*.name, 'skip-test-gate') && '1' || '0' }}
+        run: bash .gate/gate/check-needs-test.sh
+      - name: check sqli-pattern
+        run: bash .gate/gate/check-sqli.sh
+      - name: setup go
+        uses: actions/setup-go@v5
+        with: { go-version: "${{ inputs.go-version }}" }
+      - name: go test -race
+        run: go test -race ./...
+      - name: gitleaks (secret scan, ratchet — เฉพาะ commit ใหม่ใน PR)
+        run: |
+          curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.0/gitleaks_8.24.0_linux_x64.tar.gz | tar -xz gitleaks
+          ./gitleaks detect --log-opts="$BASE_SHA..$HEAD_SHA" --redact --no-banner
