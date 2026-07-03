@@ -24,10 +24,14 @@ in_money(){ local f="$1" g
 
 files="$(get_files)"
 # dirs ที่มี *_test.go ถูกแตะ (newline-delimited lookup แทน assoc array)
-test_dirs="$(while IFS= read -r f; do if [[ "$f" == *_test.go ]]; then dirname "$f"; fi; done <<<"$files")"
+# strip trailing TAB and one leading/trailing '"' — git quotes paths with
+# non-ASCII/special chars (core.quotePath), so raw lines from get_files
+# may be wrapped in quotes; the .go-suffix checks below must run AFTER this.
+test_dirs="$(while IFS= read -r f; do f="${f%$'\t'}"; f="${f#\"}"; f="${f%\"}"; if [[ "$f" == *_test.go ]]; then dirname "$f"; fi; done <<<"$files")"
 
 violation=0
 while IFS= read -r f; do
+  f="${f%$'\t'}"; f="${f#\"}"; f="${f%\"}"
   [[ "$f" == *.go && "$f" != *_test.go ]] || continue
   in_money "$f" || continue
   d="$(dirname "$f")"

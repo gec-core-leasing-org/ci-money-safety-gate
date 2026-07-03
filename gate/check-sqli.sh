@@ -16,8 +16,14 @@ get_diff(){ if [[ -n "${GATE_DIFF_FILE:-}" ]]; then cat "$GATE_DIFF_FILE";
 sink='(\.Raw\(|\.Exec\(|\.Query\(|\.QueryRow\(|ORDER BY|SELECT |INSERT |UPDATE |DELETE )'
 violation=0; skip=0
 while IFS= read -r line; do
-  if [[ "$line" == +++\ b/* ]]; then f="${line#+++ b/}"
+  if [[ "$line" == +++\ b/* ]]; then
+    f="${line#+++ b/}"; f="${f%$'\t'}"; f="${f%\"}"
     if [[ "$f" == vendor/* || "$f" == */vendor/* ]]; then skip=1; else skip=0; fi
+  elif [[ "$line" == '+++ "b/'* ]]; then
+    f="${line#+++ \"b/}"; f="${f%$'\t'}"; f="${f%\"}"
+    if [[ "$f" == vendor/* || "$f" == */vendor/* ]]; then skip=1; else skip=0; fi
+  elif [[ "$line" == +++\ * ]]; then
+    skip=1
   elif [[ "$skip" == 0 && "$line" == +* && "$line" != +++* ]]; then
     if grep -Eq 'fmt\.Sprintf' <<<"$line" && grep -Eq "$sink" <<<"$line"; then
       grep -q 'sqli:allow' <<<"$line" || { echo "❌ SQLi risk: ${line}"; violation=1; }

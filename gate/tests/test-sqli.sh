@@ -21,6 +21,11 @@ run "Sprintf non-SQL -> pass" "$tmp/plain.diff" 0
 printf '+++ b/vendor/github.com/x/orm/q.go\n+\tdb.Raw(fmt.Sprintf("SELECT * FROM t WHERE id=%%s", id))\n' >"$tmp/vendor.diff"
 run "Sprintf+SQL in vendor -> pass (vendor excluded)" "$tmp/vendor.diff" 0
 
+# Fix 2 (I1): quoted-path handling — a quoted header after a vendor file must
+# not inherit the previous file's skip=1 state (sticky-skip bypass)
+printf '+++ b/vendor/github.com/x/orm/q.go\n+\tx := 1\n+++ "b/repo/\\340\\270\\204.go"\n+\tdb.Raw(fmt.Sprintf("SELECT * FROM t WHERE id=%%s", id))\n' >"$tmp/quoted_after_vendor.diff"
+run "quoted path after vendor file -> fail (no sticky skip)" "$tmp/quoted_after_vendor.diff" 1
+
 # Fix 4 (M1): sqli:allow escape hatch
 printf '+++ b/repo/q.go\n+\tdb.Raw(fmt.Sprintf("SELECT * FROM t WHERE id=%%s", id)) //sqli:allow\n' >"$tmp/allow.diff"
 run "Sprintf+SQL with sqli:allow -> pass" "$tmp/allow.diff" 0

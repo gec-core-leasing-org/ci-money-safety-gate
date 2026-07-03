@@ -23,9 +23,16 @@ in_money(){ local f="$1" g
 
 violation=0; cur=0
 while IFS= read -r line; do
-  if [[ "$line" == +++\ b/* ]]; then f="${line#+++ b/}"; in_money "$f" && cur=1 || cur=0
+  if [[ "$line" == +++\ b/* ]]; then
+    f="${line#+++ b/}"; f="${f%$'\t'}"; f="${f%\"}"
+    in_money "$f" && cur=1 || cur=0
+  elif [[ "$line" == '+++ "b/'* ]]; then
+    f="${line#+++ \"b/}"; f="${f%$'\t'}"; f="${f%\"}"
+    in_money "$f" && cur=1 || cur=0
+  elif [[ "$line" == +++\ * ]]; then
+    cur=0
   elif [[ "$cur" == 1 && "$line" == +* && "$line" != +++* ]]; then
-    if grep -Eq '\bfloat(32|64)\b' <<<"$line" && ! grep -q 'money:allow-float' <<<"$line"; then
+    if grep -Eq '\bfloat(32|64)\b' <<<"$line" && ! grep -q 'money:allow-float reason=' <<<"$line"; then
       echo "❌ float on money path: ${line}"; violation=1
     fi
   fi

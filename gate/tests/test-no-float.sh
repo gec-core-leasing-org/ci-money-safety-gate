@@ -21,6 +21,17 @@ run "decimal in money path -> pass" "$tmp/clean.diff" 0
 printf '+++ b/vendor/github.com/x/finance/calc.go\n+\tvar rate float64 = 3.5\n' >"$tmp/vendor.diff"
 run "float in vendored money path -> pass (vendor excluded)" "$tmp/vendor.diff" 0
 
+# Fix 2 (I1): quoted-path handling (git core.quotePath octal-escapes non-ASCII names)
+printf '+++ "b/finance/\\340\\270\\204.go"\n+\tvar rate float64 = 3.5\n' >"$tmp/quoted.diff"
+run "quoted money-path file with float64 -> fail" "$tmp/quoted.diff" 1
+
+printf '+++ b/finance/my calc.go\t\n+\tvar rate float64 = 3.5\n' >"$tmp/space.diff"
+run "path-with-space (trailing tab) with float -> fail" "$tmp/space.diff" 1
+
+# Fix 3 (I2): allow-float must require reason=
+printf '+++ b/finance/calc.go\n+\tvar rate float64 = 3.5 //money:allow-float\n' >"$tmp/allow_bare.diff"
+run "bare allow-float (no reason) -> fail" "$tmp/allow_bare.diff" 1
+
 # Fix 1 (C1): fail-closed guards
 (unset GATE_DIFF_FILE BASE_SHA HEAD_SHA; bash "$gate/check-no-float.sh") >/dev/null 2>&1
 g=$?

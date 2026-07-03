@@ -23,6 +23,10 @@ run "vendored money .go without test -> pass (vendor excluded)" "$tmp/vendor.fil
 
 run "skip label overrides -> pass" "$tmp/no_test.files" 0 1
 
+# Fix 2 (I1): quoted-path handling (git core.quotePath octal-escapes non-ASCII names)
+printf '"finance/\\340\\270\\204.go"\n' >"$tmp/quoted.files"
+run "quoted money .go without test -> fail" "$tmp/quoted.files" 1
+
 # Fix 1 (C1): fail-closed guards
 (unset GATE_FILES_FILE BASE_SHA HEAD_SHA GATE_SKIP_TEST; bash "$gate/check-needs-test.sh") >/dev/null 2>&1
 g=$?
