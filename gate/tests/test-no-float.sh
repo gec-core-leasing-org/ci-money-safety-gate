@@ -67,4 +67,13 @@ g=$?
 g=$?
 [[ "$g" == 2 ]] && { echo "PASS GATE_DIFF_FILE is a directory -> exit 2"; pass=$((pass+1)); } || { echo "FAIL GATE_DIFF_FILE is a directory -> exit 2 (got $g)"; fail=$((fail+1)); }
 
+printf '+++ b/service/calculate_installment/calc.go\n+\tvar r float64 = 1.0\n' >"$tmp/newmoney.diff"
+run "float in calculate_installment -> fail (new pattern)" "$tmp/newmoney.diff" 1
+
+printf '+++ b/service/invoice/generate_invoice.go\n+\tvar vat float64 = 0.07\n' >"$tmp/inv.diff"
+run "float in invoice -> fail (new pattern)" "$tmp/inv.diff" 1
+
+printf '+++ b/service/job_collection/handler.go\n+\tvar r float64 = 1.0\n' >"$tmp/jobcol.diff"
+run "float in job_collection -> fail (new pattern, last line)" "$tmp/jobcol.diff" 1
+
 echo "== $pass passed / $fail failed =="; [[ "$fail" == 0 ]]

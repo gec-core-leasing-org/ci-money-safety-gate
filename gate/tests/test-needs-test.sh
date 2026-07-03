@@ -41,4 +41,7 @@ g=$?
 g=$?
 [[ "$g" == 2 ]] && { echo "PASS bogus SHAs (git diff fails) -> exit 2"; pass=$((pass+1)); } || { echo "FAIL bogus SHAs (git diff fails) -> exit 2 (got $g)"; fail=$((fail+1)); }
 
+printf 'datastore/agreement_balance.go\n' >"$tmp/bal.files"
+run "agreement_balance .go without test -> fail (new pattern)" "$tmp/bal.files" 1
+
 echo "== $pass passed / $fail failed =="; [[ "$fail" == 0 ]]
