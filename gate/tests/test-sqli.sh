@@ -39,4 +39,9 @@ g=$?
 g=$?
 [[ "$g" == 2 ]] && { echo "PASS GATE_DIFF_FILE nonexistent -> exit 2"; pass=$((pass+1)); } || { echo "FAIL GATE_DIFF_FILE nonexistent -> exit 2 (got $g)"; fail=$((fail+1)); }
 
+# git diff failure (unfetched SHA / shallow clone) must fail closed, not exit 0
+(cd "$gate" && unset GATE_DIFF_FILE; BASE_SHA=deadbeefdeadbeefdeadbeefdeadbeefdeadbeef HEAD_SHA=cafebabecafebabecafebabecafebabecafebabe bash "$gate/check-sqli.sh") >/dev/null 2>&1
+g=$?
+[[ "$g" == 2 ]] && { echo "PASS bogus SHAs (git diff fails) -> exit 2"; pass=$((pass+1)); } || { echo "FAIL bogus SHAs (git diff fails) -> exit 2 (got $g)"; fail=$((fail+1)); }
+
 echo "== $pass passed / $fail failed =="; [[ "$fail" == 0 ]]

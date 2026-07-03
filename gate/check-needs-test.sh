@@ -6,23 +6,25 @@ here="$(cd "$(dirname "$0")" && pwd)"
 paths_file="${GATE_MONEY_PATHS:-$here/money-paths.txt}"
 [[ "${GATE_SKIP_TEST:-0}" == "1" ]] && exit 0
 
-[[ -r "$paths_file" ]] || { echo "FATAL: money-paths file not readable: $paths_file" >&2; exit 2; }
+[[ -f "$paths_file" && -r "$paths_file" ]] || { echo "FATAL: money-paths file not readable: $paths_file" >&2; exit 2; }
+# materialize the file list BEFORE use — a git failure inside $(...) doesn't
+# stop the script; the loops would see empty input (silent pass)
 if [[ -n "${GATE_FILES_FILE:-}" ]]; then
-  [[ -r "$GATE_FILES_FILE" ]] || { echo "FATAL: files list not readable: $GATE_FILES_FILE" >&2; exit 2; }
+  [[ -f "$GATE_FILES_FILE" && -r "$GATE_FILES_FILE" ]] || { echo "FATAL: files list not readable: $GATE_FILES_FILE" >&2; exit 2; }
+  src="$GATE_FILES_FILE"
 else
   [[ -n "${BASE_SHA:-}" && -n "${HEAD_SHA:-}" ]] || { echo "FATAL: set BASE_SHA and HEAD_SHA" >&2; exit 2; }
   : "${BASE_SHA:?set BASE_SHA}" "${HEAD_SHA:?set HEAD_SHA}"
+  src="$(mktemp)"; trap 'rm -f "$src"' EXIT
+  git diff --name-only "${BASE_SHA}...${HEAD_SHA}" >"$src" || { echo "FATAL: git diff failed (unfetched SHA? shallow clone?)" >&2; exit 2; }
 fi
-
-get_files(){ if [[ -n "${GATE_FILES_FILE:-}" ]]; then cat "$GATE_FILES_FILE";
-  else git diff --name-only "${BASE_SHA:?}...${HEAD_SHA:?}"; fi; }
 
 in_money(){ local f="$1" g
   [[ "$f" == vendor/* || "$f" == */vendor/* ]] && return 1
   while IFS= read -r g; do [[ -z "$g" ]] && continue;
   [[ "$f" == *"$g"* ]] && return 0; done <"$paths_file"; return 1; }
 
-files="$(get_files)"
+files="$(cat "$src")"
 # dirs ที่มี *_test.go ถูกแตะ (newline-delimited lookup แทน assoc array)
 # strip trailing TAB and one leading/trailing '"' — git quotes paths with
 # non-ASCII/special chars (core.quotePath), so raw lines from get_files
