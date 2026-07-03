@@ -21,6 +21,17 @@ run "decimal in money path -> pass" "$tmp/clean.diff" 0
 printf '+++ b/vendor/github.com/x/finance/calc.go\n+\tvar rate float64 = 3.5\n' >"$tmp/vendor.diff"
 run "float in vendored money path -> pass (vendor excluded)" "$tmp/vendor.diff" 0
 
+# Policy (2026-07-03): *_test.go exempt — tests of legacy float APIs (Cal*) legitimately reference float64
+printf '+++ b/finance/cal_float_helpers_test.go\n+\tgot := CalRate(1.0) // float64 legacy API\n+\tvar want float64 = 3.5\n' >"$tmp/testfile.diff"
+run "float in money-path _test.go -> pass (test files exempt)" "$tmp/testfile.diff" 0
+
+# Policy (2026-07-03): comment-only lines exempt — e.g. deprecation notes mentioning float64
+printf '+++ b/finance/calc.go\n+\t// Deprecated: CalRate has float64 precision limitations\n' >"$tmp/comment.diff"
+run "comment-only float64 mention -> pass" "$tmp/comment.diff" 0
+
+printf '+++ b/finance/calc.go\n+\tvar rate float64 = 3.5 // legacy note\n' >"$tmp/code_comment.diff"
+run "code with trailing comment -> still fail" "$tmp/code_comment.diff" 1
+
 # Fix 2 (I1): quoted-path handling (git core.quotePath octal-escapes non-ASCII names)
 printf '+++ "b/finance/\\340\\270\\204.go"\n+\tvar rate float64 = 3.5\n' >"$tmp/quoted.diff"
 run "quoted money-path file with float64 -> fail" "$tmp/quoted.diff" 1

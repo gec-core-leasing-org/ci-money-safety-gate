@@ -27,13 +27,16 @@ violation=0; cur=0
 while IFS= read -r line; do
   if [[ "$line" == +++\ b/* ]]; then
     f="${line#+++ b/}"; f="${f%$'\t'}"; f="${f%\"}"
-    in_money "$f" && cur=1 || cur=0
+    in_money "$f" && [[ "$f" != *_test.go ]] && cur=1 || cur=0
   elif [[ "$line" == '+++ "b/'* ]]; then
     f="${line#+++ \"b/}"; f="${f%$'\t'}"; f="${f%\"}"
-    in_money "$f" && cur=1 || cur=0
+    in_money "$f" && [[ "$f" != *_test.go ]] && cur=1 || cur=0
   elif [[ "$line" == +++\ * ]]; then
     cur=0
   elif [[ "$cur" == 1 && "$line" == +* && "$line" != +++* ]]; then
+    # comment-only lines exempt (e.g. deprecation notes mentioning float64)
+    t="${line#+}"; t="${t#"${t%%[![:space:]]*}"}"
+    [[ "$t" == //* ]] && continue
     if grep -Eq '\bfloat(32|64)\b' <<<"$line" && ! grep -q 'money:allow-float reason=' <<<"$line"; then
       echo "❌ float on money path: ${line}"; violation=1
     fi
