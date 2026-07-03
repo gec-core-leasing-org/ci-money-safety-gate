@@ -2,6 +2,14 @@
 # Fail if an added line builds SQL via fmt.Sprintf (injection risk).
 # ข้าม vendor/ ให้สอดคล้องกับ check-no-float / check-needs-test (กัน false positive ตอน go mod vendor)
 set -uo pipefail
+
+if [[ -n "${GATE_DIFF_FILE:-}" ]]; then
+  [[ -r "$GATE_DIFF_FILE" ]] || { echo "FATAL: diff file not readable: $GATE_DIFF_FILE" >&2; exit 2; }
+else
+  [[ -n "${BASE_SHA:-}" && -n "${HEAD_SHA:-}" ]] || { echo "FATAL: set BASE_SHA and HEAD_SHA" >&2; exit 2; }
+  : "${BASE_SHA:?set BASE_SHA}" "${HEAD_SHA:?set HEAD_SHA}"
+fi
+
 get_diff(){ if [[ -n "${GATE_DIFF_FILE:-}" ]]; then cat "$GATE_DIFF_FILE";
   else git diff --unified=0 "${BASE_SHA:?}...${HEAD_SHA:?}"; fi; }
 

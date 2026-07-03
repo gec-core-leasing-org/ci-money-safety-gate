@@ -5,6 +5,14 @@ set -uo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 paths_file="${GATE_MONEY_PATHS:-$here/money-paths.txt}"
 
+[[ -r "$paths_file" ]] || { echo "FATAL: money-paths file not readable: $paths_file" >&2; exit 2; }
+if [[ -n "${GATE_DIFF_FILE:-}" ]]; then
+  [[ -r "$GATE_DIFF_FILE" ]] || { echo "FATAL: diff file not readable: $GATE_DIFF_FILE" >&2; exit 2; }
+else
+  [[ -n "${BASE_SHA:-}" && -n "${HEAD_SHA:-}" ]] || { echo "FATAL: set BASE_SHA and HEAD_SHA" >&2; exit 2; }
+  : "${BASE_SHA:?set BASE_SHA}" "${HEAD_SHA:?set HEAD_SHA}"
+fi
+
 get_diff(){ if [[ -n "${GATE_DIFF_FILE:-}" ]]; then cat "$GATE_DIFF_FILE";
   else git diff --unified=0 "${BASE_SHA:?set BASE_SHA}...${HEAD_SHA:?set HEAD_SHA}"; fi; }
 

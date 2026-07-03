@@ -6,6 +6,14 @@ here="$(cd "$(dirname "$0")" && pwd)"
 paths_file="${GATE_MONEY_PATHS:-$here/money-paths.txt}"
 [[ "${GATE_SKIP_TEST:-0}" == "1" ]] && exit 0
 
+[[ -r "$paths_file" ]] || { echo "FATAL: money-paths file not readable: $paths_file" >&2; exit 2; }
+if [[ -n "${GATE_FILES_FILE:-}" ]]; then
+  [[ -r "$GATE_FILES_FILE" ]] || { echo "FATAL: files list not readable: $GATE_FILES_FILE" >&2; exit 2; }
+else
+  [[ -n "${BASE_SHA:-}" && -n "${HEAD_SHA:-}" ]] || { echo "FATAL: set BASE_SHA and HEAD_SHA" >&2; exit 2; }
+  : "${BASE_SHA:?set BASE_SHA}" "${HEAD_SHA:?set HEAD_SHA}"
+fi
+
 get_files(){ if [[ -n "${GATE_FILES_FILE:-}" ]]; then cat "$GATE_FILES_FILE";
   else git diff --name-only "${BASE_SHA:?}...${HEAD_SHA:?}"; fi; }
 

@@ -21,4 +21,18 @@ run "decimal in money path -> pass" "$tmp/clean.diff" 0
 printf '+++ b/vendor/github.com/x/finance/calc.go\n+\tvar rate float64 = 3.5\n' >"$tmp/vendor.diff"
 run "float in vendored money path -> pass (vendor excluded)" "$tmp/vendor.diff" 0
 
+# Fix 1 (C1): fail-closed guards
+(unset GATE_DIFF_FILE BASE_SHA HEAD_SHA; bash "$gate/check-no-float.sh") >/dev/null 2>&1
+g=$?
+[[ "$g" == 2 ]] && { echo "PASS no override + no SHAs -> exit 2"; pass=$((pass+1)); } || { echo "FAIL no override + no SHAs -> exit 2 (got $g)"; fail=$((fail+1)); }
+
+(unset BASE_SHA HEAD_SHA; GATE_DIFF_FILE=/nonexistent bash "$gate/check-no-float.sh") >/dev/null 2>&1
+g=$?
+[[ "$g" == 2 ]] && { echo "PASS GATE_DIFF_FILE nonexistent -> exit 2"; pass=$((pass+1)); } || { echo "FAIL GATE_DIFF_FILE nonexistent -> exit 2 (got $g)"; fail=$((fail+1)); }
+
+printf '+++ b/finance/calc.go\n+\tvar rate float64 = 3.5\n' >"$tmp/moneypaths.diff"
+(unset BASE_SHA HEAD_SHA; GATE_MONEY_PATHS=/nonexistent GATE_DIFF_FILE="$tmp/moneypaths.diff" bash "$gate/check-no-float.sh") >/dev/null 2>&1
+g=$?
+[[ "$g" == 2 ]] && { echo "PASS GATE_MONEY_PATHS nonexistent -> exit 2"; pass=$((pass+1)); } || { echo "FAIL GATE_MONEY_PATHS nonexistent -> exit 2 (got $g)"; fail=$((fail+1)); }
+
 echo "== $pass passed / $fail failed =="; [[ "$fail" == 0 ]]

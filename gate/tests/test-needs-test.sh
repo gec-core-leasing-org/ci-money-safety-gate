@@ -23,4 +23,13 @@ run "vendored money .go without test -> pass (vendor excluded)" "$tmp/vendor.fil
 
 run "skip label overrides -> pass" "$tmp/no_test.files" 0 1
 
+# Fix 1 (C1): fail-closed guards
+(unset GATE_FILES_FILE BASE_SHA HEAD_SHA GATE_SKIP_TEST; bash "$gate/check-needs-test.sh") >/dev/null 2>&1
+g=$?
+[[ "$g" == 2 ]] && { echo "PASS no override + no SHAs -> exit 2"; pass=$((pass+1)); } || { echo "FAIL no override + no SHAs -> exit 2 (got $g)"; fail=$((fail+1)); }
+
+(unset BASE_SHA HEAD_SHA GATE_SKIP_TEST; GATE_FILES_FILE=/nonexistent bash "$gate/check-needs-test.sh") >/dev/null 2>&1
+g=$?
+[[ "$g" == 2 ]] && { echo "PASS GATE_FILES_FILE nonexistent -> exit 2"; pass=$((pass+1)); } || { echo "FAIL GATE_FILES_FILE nonexistent -> exit 2 (got $g)"; fail=$((fail+1)); }
+
 echo "== $pass passed / $fail failed =="; [[ "$fail" == 0 ]]
