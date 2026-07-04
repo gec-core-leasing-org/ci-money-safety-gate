@@ -24,10 +24,18 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s
           --health-timeout 5s --health-retries 10
     steps:
-      - name: probe checkout_token presence (length only, value never printed)
+      - name: probe checkout_token access (HTTP status only, value never printed)
         env:
           PROBE_TOKEN: ${{ secrets.checkout_token }}
-        run: echo "checkout_token length = ${#PROBE_TOKEN}"
+        run: |
+          echo "checkout_token length = ${#PROBE_TOKEN}"
+          for r in db-migration-service testdb-harness; do
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "Authorization: Bearer $PROBE_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/gec-core-leasing-org/$r")
+            echo "GET repos/$r -> HTTP $code"
+          done
       - uses: actions/checkout@v4          # caller's own repo (char test in datastore/)
       - run: git config core.quotePath false
       - uses: actions/checkout@v4          # schema owner
