@@ -24,6 +24,10 @@ jobs:
           --health-cmd "pg_isready -U postgres" --health-interval 5s
           --health-timeout 5s --health-retries 10
     steps:
+      - name: probe checkout_token presence (length only, value never printed)
+        env:
+          PROBE_TOKEN: ${{ secrets.checkout_token }}
+        run: echo "checkout_token length = ${#PROBE_TOKEN}"
       - uses: actions/checkout@v4          # caller's own repo (char test in datastore/)
       - run: git config core.quotePath false
       - uses: actions/checkout@v4          # schema owner
