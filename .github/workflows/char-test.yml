@@ -1,0 +1,52 @@
+name: char-test
+on:
+  workflow_call:
+    inputs:
+      go-version:   { required: true,  type: string }
+      dsn-env-name: { required: true,  type: string }   # e.g. FA_CHARTEST_DSN
+      test-pattern: { required: false, type: string, default: "TestChar" }
+      test-path:    { required: false, type: string, default: "./datastore/" }
+      db-migration-ref: { required: false, type: string, default: "main" }
+      harness-ref:      { required: false, type: string, default: "main" }
+jobs:
+  char-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: chartest }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4          # caller's own repo (char test in datastore/)
+      - run: git config core.quotePath false
+      - uses: actions/checkout@v4          # schema owner
+        with:
+          repository: gec-core-leasing-org/db-migration-service
+          ref: ${{ inputs.db-migration-ref }}
+          path: .db-migration
+      - uses: actions/checkout@v4          # apply tool (cmd/apply)
+        with:
+          repository: gec-core-leasing-org/testdb-harness
+          ref: ${{ inputs.harness-ref }}
+          path: .testdb-harness
+      - uses: actions/setup-go@v5
+        with: { go-version: "${{ inputs.go-version }}" }
+      - name: apply full schema (prod order, 569 scripts)
+        working-directory: .testdb-harness
+        env:
+          DB_MIGRATION_SERVICE_ROOT: ${{ github.workspace }}/.db-migration
+          APPLY_DSN: postgres://postgres:postgres@localhost:5432/chartest?sslmode=disable
+        run: go run ./cmd/apply
+      - name: char test (DB-write round-trip) + assert it actually ran
+        env:
+          CHARTEST_DSN: postgres://postgres:postgres@localhost:5432/chartest?sslmode=disable
+        run: |
+          export ${{ inputs.dsn-env-name }}="$CHARTEST_DSN"
+          out=$(go test ${{ inputs.test-path }} -run '${{ inputs.test-pattern }}' -race -vet=off -v 2>&1)
+          echo "$out"
+          echo "$out" | grep -q "FAIL" && { echo "::error::char test FAILED"; exit 1; }
+          echo "$out" | grep -qE '^(=== RUN|--- PASS)' || { echo "::error::NO char test ran — DSN/skip mis-wired (green≠pass)"; exit 1; }
+          echo "char test ran and passed"
