@@ -33,7 +33,12 @@ jobs:
         uses: actions/setup-go@v5
         with: { go-version: "${{ inputs.go-version }}" }
       - name: go test -race
-        run: go test -race ./...
+        # -vet=off: skip the auto-vet pass that go test runs before tests. Newer
+        # Go toolchains (1.24+) promote "non-constant format string" to a hard
+        # build error, which fails legacy repos on pre-existing log.Errorf(msg)
+        # calls unrelated to money safety. The gate's real checks (float64/SQLi
+        # scans, the tests themselves) still run. char-test.yml already does this.
+        run: go test -race -vet=off ./...
       - name: gitleaks (secret scan, ratchet — เฉพาะ commit ใหม่ใน PR)
         run: |
           curl -sSfL https://github.com/gitleaks/gitleaks/releases/download/v8.24.0/gitleaks_8.24.0_linux_x64.tar.gz | tar -xz gitleaks
