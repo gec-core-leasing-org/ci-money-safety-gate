@@ -51,8 +51,17 @@ jobs:
           CHARTEST_DSN: postgres://postgres:postgres@localhost:5432/chartest?sslmode=disable
         run: |
           export ${{ inputs.dsn-env-name }}="$CHARTEST_DSN"
+          # step นี้รันด้วย `bash -e` — ถ้าปล่อย `out=$(go test ...)` ไว้เฉย ๆ shell จะตาย
+          # ตรงบรรทัดนั้นทันทีที่ go test คืน non-zero คือ "ก่อนถึง echo" ผลคือ gate แดง
+          # โดยไม่พิมพ์อะไรเลย debug ไม่ได้ ต้องปิด -e เฉพาะช่วง capture แล้วเก็บ exit code ไว้เอง
+          set +e
           out=$(go test ${{ inputs.test-path }} -run '${{ inputs.test-pattern }}' -race -vet=off -v 2>&1)
+          code=$?
+          set -e
           echo "$out"
           echo "$out" | grep -q "FAIL" && { echo "::error::char test FAILED"; exit 1; }
           echo "$out" | grep -qE '^(=== RUN|--- PASS)' || { echo "::error::NO char test ran — DSN/skip mis-wired (green≠pass)"; exit 1; }
+          # go test แดงได้โดยไม่มีคำว่า FAIL ใน output เช่น timeout / panic ที่ถูกตัดกลางคัน
+          # guard สองตัวข้างบนจึงไม่พอ ต้องเช็ค exit code ตรง ๆ ปิดท้าย
+          [ "$code" -eq 0 ] || { echo "::error::go test exit=$code (output ไม่เข้าเงื่อนไขข้างบน — ดู log เต็มด้านบน)"; exit 1; }
           echo "char test ran and passed"
