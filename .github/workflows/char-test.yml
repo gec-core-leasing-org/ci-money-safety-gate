@@ -8,18 +8,36 @@ on:
       test-path:    { required: false, type: string, default: "./datastore/" }
       db-migration-ref: { required: false, type: string, default: "main" }
       harness-ref:      { required: false, type: string, default: "main" }
+      runs-on:
+        # JSON array ของ label เสมอ — ดูคำอธิบายเต็มใน money-safety-gate.yml
+        #   '["ubuntu-latest"]' (default) | '["self-hosted","org-linux"]'
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
+      timeout-minutes:
+        # default 360 = ค่า default ของ GitHub เอง → ไม่เปลี่ยนพฤติกรรมของ caller เดิม
+        # caller ที่ย้ายไป self-hosted ควรตั้งให้ต่ำลง เพราะ runner มีแค่ 2 ตัว
+        # job ที่ค้างจะกินคิวของทุก job ที่รออยู่เต็มเวลา timeout
+        required: false
+        type: number
+        default: 360
     secrets:
       checkout_token:                                     # PAT w/ contents:read on the two private sibling repos
         required: false                                   # (db-migration-service + testdb-harness). Falls back to
                                                           # github.token (works only if those repos are public).
 jobs:
   char-test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     services:
       postgres:
         image: postgres:16-alpine
         env: { POSTGRES_PASSWORD: postgres, POSTGRES_DB: chartest }
-        ports: ["5432:5432"]
+        # host port เดี่ยว (ไม่มี `:`) = ให้ Docker สุ่มพอร์ตให้ แล้วอ่านค่าจริงด้วย
+        # `job.services.postgres.ports['5432']` — บน ubuntu-latest ไม่ต่างกันเพราะ VM ใช้แล้วทิ้ง
+        # แต่บน self-hosted host คือเครื่อง integration env จริง การจองพอร์ตตายตัว
+        # จะชนกับ job ตัวที่สอง/service ที่มาทีหลังทันทีโดยไม่มีใครเห็นสาเหตุ
+        ports: ["5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 5s
           --health-timeout 5s --health-retries 10
@@ -44,11 +62,14 @@ jobs:
         working-directory: .testdb-harness
         env:
           DB_MIGRATION_SERVICE_ROOT: ${{ github.workspace }}/.db-migration
-          APPLY_DSN: postgres://postgres:postgres@localhost:5432/chartest?sslmode=disable
+          # `job` context อ่านได้เฉพาะระดับ step (steps.*.env / with / if / run)
+          # อ่านใน jobs.<id>.env ไม่ได้ — ที่นี่เป็น step-level env จึงใส่ตรงนี้ได้เลย
+          # ไม่ต้องผ่าน $GITHUB_ENV (ซึ่งจะทำให้ DSN ตกเป็นไฟล์ 644 บนเครื่องที่ใช้ร่วมกัน)
+          APPLY_DSN: postgres://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}/chartest?sslmode=disable
         run: go run ./cmd/apply
       - name: char test (DB-write round-trip) + assert it actually ran
         env:
-          CHARTEST_DSN: postgres://postgres:postgres@localhost:5432/chartest?sslmode=disable
+          CHARTEST_DSN: postgres://postgres:postgres@localhost:${{ job.services.postgres.ports['5432'] }}/chartest?sslmode=disable
         run: |
           export ${{ inputs.dsn-env-name }}="$CHARTEST_DSN"
           # step นี้รันด้วย `bash -e` — ถ้าปล่อย `out=$(go test ...)` ไว้เฉย ๆ shell จะตาย
