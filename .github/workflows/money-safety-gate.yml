@@ -5,9 +5,26 @@ on:
       go-version:
         required: true
         type: string
+      runs-on:
+        # JSON array ของ label เสมอ (ไม่ใช่ string เดี่ยว) — `runs-on:` รับ array ได้อยู่แล้ว
+        # จึงใช้รูปเดียวครอบทั้ง GitHub-hosted และ self-hosted ที่ต้องระบุหลาย label
+        #   ubuntu-latest (default)  : '["ubuntu-latest"]'
+        #   self-hosted ของทีม       : '["self-hosted","org-linux"]'
+        # default ตรงกับพฤติกรรมเดิมเป๊ะ → caller ที่ไม่ส่ง input นี้ไม่ต้องแก้อะไรเลย
+        required: false
+        type: string
+        default: '["ubuntu-latest"]'
+      timeout-minutes:
+        # default 360 = ค่า default ของ GitHub เอง → ไม่เปลี่ยนพฤติกรรมของ caller เดิม
+        # caller ที่ย้ายไป self-hosted ควรตั้งให้ต่ำลง เพราะ runner มีแค่ 2 ตัว
+        # job ที่ค้างจะกินคิวของทุก job ที่รออยู่เต็มเวลา timeout
+        required: false
+        type: number
+        default: 360
 jobs:
   gate:
-    runs-on: ubuntu-latest
+    runs-on: ${{ fromJSON(inputs.runs-on) }}
+    timeout-minutes: ${{ inputs.timeout-minutes }}
     steps:
       - name: checkout PR
         uses: actions/checkout@v4
