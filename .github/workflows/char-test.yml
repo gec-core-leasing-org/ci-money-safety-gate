@@ -9,11 +9,14 @@ on:
       db-migration-ref: { required: false, type: string, default: "main" }
       harness-ref:      { required: false, type: string, default: "main" }
       runs-on:
-        # JSON array ของ label เสมอ — ดูคำอธิบายเต็มใน money-safety-gate.yml
-        #   '["ubuntu-latest"]' (default) | '["self-hosted","org-linux"]'
+        # JSON array ของ label เสมอ — ดูคำอธิบายเต็ม (เหตุผล + วิธี override) ใน money-safety-gate.yml
+        #   '["self-hosted","org-linux"]' (default ตั้งแต่ v1.8, Task 7) | '["ubuntu-latest"]'
+        # ↩️ override กลับ hosted รายรีโป: ใส่ `runs-on: '["ubuntu-latest"]'` ใน `with:` ของ caller
+        # ↩️ ถอยทั้งชุด 18 รีโป: เลื่อน moving tag `v1` กลับ (runbook §ถอนออก)
+        # ⚠️ รีโปต้องอยู่ใน runner group `self-hosted-migration` (id 3) ก่อน ไม่งั้น job ค้าง queued
         required: false
         type: string
-        default: '["ubuntu-latest"]'
+        default: '["self-hosted","org-linux"]'
       timeout-minutes:
         # default 360 = ค่า default ของ GitHub เอง → ไม่เปลี่ยนพฤติกรรมของ caller เดิม
         # caller ที่ย้ายไป self-hosted ควรตั้งให้ต่ำลง เพราะ runner มีแค่ 2 ตัว
