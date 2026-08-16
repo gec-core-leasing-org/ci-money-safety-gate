@@ -8,12 +8,27 @@ on:
       runs-on:
         # JSON array ของ label เสมอ (ไม่ใช่ string เดี่ยว) — `runs-on:` รับ array ได้อยู่แล้ว
         # จึงใช้รูปเดียวครอบทั้ง GitHub-hosted และ self-hosted ที่ต้องระบุหลาย label
-        #   ubuntu-latest (default)  : '["ubuntu-latest"]'
-        #   self-hosted ของทีม       : '["self-hosted","org-linux"]'
-        # default ตรงกับพฤติกรรมเดิมเป๊ะ → caller ที่ไม่ส่ง input นี้ไม่ต้องแก้อะไรเลย
+        #   self-hosted ของทีม (default) : '["self-hosted","org-linux"]'
+        #   GitHub-hosted                : '["ubuntu-latest"]'
+        #
+        # 🔴 default = self-hosted ตั้งแต่ v1.8 (Task 7, 2026-08-16) — เปลี่ยนที่นี่ที่เดียว
+        # ย้าย CI ของ caller ทั้ง 18 รีโปพร้อมกันโดยไม่ต้องแตะ `ci.yml` ของใครเลย
+        # เหตุผล: `ci.yml` ของ caller 18 รีโปที่ผ่าน workflow นี้กิน **1,369 นาที = 68%**
+        # ของโควตา Actions ทั้ง org (2,012 นาที ก.ค. 2026 จาก billing usage API)
+        # ส่วน build/deploy ของ infra รวมกันแค่ 2 นาที → จุดที่คุ้มที่สุดคือจุดนี้จุดเดียว
+        # ดู `docs/decisions/D-20260816-ci-gate-default-runner-self-hosted.md` ใน coreleasing-hub
+        #
+        # ⚠️ รีโปที่จะเรียกใช้ต้องอยู่ใน runner group `self-hosted-migration` (id 3,
+        # visibility `selected`) ก่อน ไม่งั้น job จะค้าง `queued` จนถูกยกเลิกที่ 24 ชม.
+        #
+        # ↩️ override กลับ GitHub-hosted รายรีโป — ใส่ใน `ci.yml` ของรีโปนั้น:
+        #     with:
+        #       runs-on: '["ubuntu-latest"]'
+        # ↩️ ถอยทั้งชุด 18 รีโป — เลื่อน moving tag `v1` กลับ (คำสั่งเต็มอยู่ใน runbook
+        #    `docs/runbooks/self-hosted-runner.md` §ถอนออก)
         required: false
         type: string
-        default: '["ubuntu-latest"]'
+        default: '["self-hosted","org-linux"]'
       timeout-minutes:
         # default 360 = ค่า default ของ GitHub เอง → ไม่เปลี่ยนพฤติกรรมของ caller เดิม
         # caller ที่ย้ายไป self-hosted ควรตั้งให้ต่ำลง เพราะ runner มีแค่ 2 ตัว
