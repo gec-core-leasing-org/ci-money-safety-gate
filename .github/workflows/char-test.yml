@@ -60,7 +60,11 @@ jobs:
           path: .testdb-harness
           token: ${{ secrets.checkout_token || github.token }}
       - uses: actions/setup-go@v5
-        with: { go-version: "${{ inputs.go-version }}" }
+        with:
+          go-version: "${{ inputs.go-version }}"
+          # ปิด cache บน self-hosted / เปิดบน GitHub-hosted — เหตุผลเต็มใน money-safety-gate.yml
+          # (v1.9, Task 8) · `inputs.runs-on` เป็น JSON array string เสมอ
+          cache: ${{ !contains(inputs.runs-on, 'self-hosted') }}
       - name: apply full schema (prod order, 569 scripts)
         working-directory: .testdb-harness
         env:

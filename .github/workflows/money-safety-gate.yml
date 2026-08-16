@@ -63,7 +63,24 @@ jobs:
         run: bash .gate/gate/check-sqli.sh
       - name: setup go
         uses: actions/setup-go@v5
-        with: { go-version: "${{ inputs.go-version }}" }
+        with:
+          go-version: "${{ inputs.go-version }}"
+          # 🔴 ปิด cache เมื่อรันบน self-hosted (v1.9, Task 8, 2026-08-16)
+          # วัดจริงใน Task 7: post-step "Post setup go" (อัปโหลด GOMODCACHE+GOCACHE ขึ้น
+          # GitHub cache service) กิน **35–68% ของเวลาทั้ง job** — `financial-service`
+          # ใช้ 234s จาก 344s ทั้งที่งานจริงแค่ 88s และ load เครื่องตกเหลือ 0.42 ตลอดช่วงนั้น
+          # (= network ไม่ใช่ CPU) · runner มีแค่ 2 ตัว → job ที่ยึด runner ไว้เฉยๆ = คิวยาว
+          #
+          # บน self-hosted cache นี้ **ซ้ำซ้อน** เพราะ cache ของ Go อยู่บนดิสก์ข้ามรอบอยู่แล้ว
+          # (ยืนยันบนเครื่อง 2026-08-16: `/home/ghrunner/go/pkg/mod` 492M ·
+          #  `/home/ghrunner/.cache/go-build` 2.9G — user เดียวกันทุก job ทุก runner)
+          #
+          # บน GitHub-hosted **ยังเปิดไว้** เพราะ VM ใหม่ทุกครั้ง cache มีประโยชน์จริง
+          # → เงื่อนไขอ่านจาก `inputs.runs-on` ซึ่งเป็น JSON array string เสมอ
+          #   '["self-hosted","org-linux"]' -> false (ปิด) · '["ubuntu-latest"]' -> true (เปิด)
+          # ใช้ `contains` กับ string ตรงๆ ไม่ `fromJSON` เพราะต้องการให้ label set ใดก็ตาม
+          # ที่มี `self-hosted` ปิด cache หมด โดยไม่ต้องรู้ว่ามี label อะไรอีกบ้าง
+          cache: ${{ !contains(inputs.runs-on, 'self-hosted') }}
       - name: go test -race
         # -vet=off: skip the auto-vet pass that go test runs before tests. Newer
         # Go toolchains (1.24+) promote "non-constant format string" to a hard
