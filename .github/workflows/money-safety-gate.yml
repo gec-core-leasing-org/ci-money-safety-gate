@@ -43,16 +43,46 @@ jobs:
     steps:
       - name: checkout PR
         uses: actions/checkout@v4
-        with: { fetch-depth: 0 }
+        with:
+          # 🔴 `fetch-depth: 0` **ห้ามลด** — gate ทั้งสี่ตัวอิง range `BASE..HEAD` /
+          # `BASE...HEAD` ซึ่งต้องหา **merge-base** ได้ · shallow clone ทำให้ range แคบลง
+          # **เงียบๆ** = gate เขียวทั้งที่สแกนไม่ครบ ซึ่งอันตรายกว่าช้า
+          fetch-depth: 0
+          # ⚡ partial clone (v1.10, Task 9): ดึง **commit graph ครบทุก commit เหมือนเดิมเป๊ะ**
+          # แต่ไม่ดึง blob ของ history — blob ที่ต้องใช้จริง (ไฟล์ที่ diff แตะ) git ดึงให้เอง
+          # ตอนใช้ → **range ที่สแกนเท่าเดิมทุกกรณี** รวมถึงเคส base เคลื่อน เพราะไม่มี commit
+          # ไหนหายไปเลย (ต่างจาก `fetch-depth: <n>` ที่ตัด commit ทิ้งจริง และพังเคส base เคลื่อน)
+          #
+          # ทำไมต้องมี: หลังปิด go cache (v1.9) step นี้กลายเป็นตัวที่แพงที่สุดบน self-hosted
+          # วัดจริง — commit เดียวกัน workflow เดียวกัน ต่างกันแค่ runner:
+          #   GitHub-hosted (run 31922207342)  checkout PR =   9s
+          #   self-hosted   (run 31926936528)  checkout PR = 216s   ← ช้ากว่า 24 เท่า
+          # เครื่อง integration ต่อเน็ตธรรมดา ส่วน hosted runner อยู่ใน datacenter ของ GitHub
+          # และ `financial-accounting-service` = 141MB → เป็นต้นทุน network ล้วนๆ
+          #
+          # เปิดเฉพาะ self-hosted — บน hosted clone เต็มเร็วอยู่แล้ว (9s)
+          # ⚠️ `inputs.runs-on` เป็น **JSON array string** ('["ubuntu-latest"]') ห้ามเทียบ `==`
+          filter: ${{ contains(inputs.runs-on, 'self-hosted') && 'blob:none' || '' }}
       - name: disable path quoting (non-ASCII filenames)
         run: git config core.quotePath false
       - name: checkout gate scripts
         uses: actions/checkout@v4
         with: { repository: gec-core-leasing-org/ci-money-safety-gate, ref: v1, path: .gate }
       - name: diff range
+        # guard (v1.10, Task 9): ถ้าประวัติไม่พอสำหรับ range ให้ **แดงดังๆ** ไม่ใช่สแกนแคบลงเงียบๆ
+        # และพิมพ์ merge-base + จำนวน commit ใน range ลง log เพื่อให้เทียบข้าม runner /
+        # ข้ามเวอร์ชันได้ว่า "สแกน range เดียวกันจริงไหม"
         run: |
-          echo "BASE_SHA=${{ github.event.pull_request.base.sha }}" >> "$GITHUB_ENV"
-          echo "HEAD_SHA=${{ github.event.pull_request.head.sha }}" >> "$GITHUB_ENV"
+          set -euo pipefail
+          B="${{ github.event.pull_request.base.sha }}"
+          H="${{ github.event.pull_request.head.sha }}"
+          git cat-file -e "${B}^{commit}" 2>/dev/null || { echo "::error::BASE_SHA $B ไม่อยู่ใน clone — ประวัติไม่ครบ"; exit 1; }
+          git cat-file -e "${H}^{commit}" 2>/dev/null || { echo "::error::HEAD_SHA $H ไม่อยู่ใน clone — ประวัติไม่ครบ"; exit 1; }
+          MB="$(git merge-base "$B" "$H")" || { echo "::error::หา merge-base ของ $B กับ $H ไม่ได้ — ประวัติไม่ครบ"; exit 1; }
+          N="$(git rev-list --count "${B}..${H}")"
+          echo "gate-range merge-base=$MB commits_in_range=$N base=$B head=$H"
+          echo "BASE_SHA=$B" >> "$GITHUB_ENV"
+          echo "HEAD_SHA=$H" >> "$GITHUB_ENV"
       - name: check no-new-float-on-money
         run: bash .gate/gate/check-no-float.sh
       - name: check money-file-needs-test
