@@ -8,6 +8,27 @@ on:
       test-path:    { required: false, type: string, default: "./datastore/" }
       db-migration-ref: { required: false, type: string, default: "main" }
       harness-ref:      { required: false, type: string, default: "main" }
+      serial-packages:
+        # รัน `go test` ทีละ package (`-p 1`) แทนที่จะปล่อยให้ Go รันขนานตามจำนวน CPU
+        #
+        # ทำไมถึงต้องมี: `test-path` ที่มีมากกว่าหนึ่ง package ทำให้ Go สร้าง test binary
+        # คนละตัวและรัน **ขนานกัน** แต่ทุกตัวชี้ DSN ตัวเดียวกัน = **DB ก้อนเดียว** →
+        # เทสต์ฝั่งหนึ่ง insert/delete แถวที่อีกฝั่งกำลัง assert อยู่
+        #
+        # วัดจริงบน financial-accounting-service (`./datastore/ ./service/`), DB ใหม่ต่อรอบ:
+        #   ค่า default (ขนาน) : แดง 10/20 (50%) เฉลี่ย 11.1s/รอบ
+        #   `-p 1`             : แดง  0/20 ( 0%) เฉลี่ย 14.0s/รอบ  (+2.9s, +26%)
+        #
+        # ทำไม default ยังเป็น false: 13 จาก 15 caller ส่ง package เดียว (`./datastore/`)
+        # ซึ่ง `-p 1` ไม่ช่วยอะไรเลยเพราะไม่มี cross-package parallelism ตั้งแต่แรก แต่ยัง
+        # serialize การ compile dependency ให้ช้าลงฟรี ๆ → เปิดเฉพาะ caller ที่ส่งหลาย package
+        #
+        # ⚠️ นี่คือการ**กลบอาการ** ไม่ใช่ isolation จริง — ทางแก้ที่ถูกต้องกว่าคือแยก DB
+        # ต่อ package (ต้องแก้ทั้ง harness และ charDB() ของทุก repo) หรือ scope เทสต์ให้
+        # ไม่ assert สถานะ global ของตารางที่ package อื่นใช้ร่วม
+        required: false
+        type: boolean
+        default: false
       runs-on:
         # JSON array ของ label เสมอ — ดูคำอธิบายเต็ม (เหตุผล + วิธี override) ใน money-safety-gate.yml
         #   '["self-hosted","org-linux"]' (default ตั้งแต่ v1.8, Task 7) | '["ubuntu-latest"]'
@@ -83,7 +104,11 @@ jobs:
           # ตรงบรรทัดนั้นทันทีที่ go test คืน non-zero คือ "ก่อนถึง echo" ผลคือ gate แดง
           # โดยไม่พิมพ์อะไรเลย debug ไม่ได้ ต้องปิด -e เฉพาะช่วง capture แล้วเก็บ exit code ไว้เอง
           set +e
-          out=$(go test ${{ inputs.test-path }} -run '${{ inputs.test-pattern }}' -race -vet=off -v 2>&1)
+          # serial-packages=true → `-p 1` (ทีละ package) · false → ไม่ใส่อะไรเลย = พฤติกรรมเดิม
+          PFLAG=""
+          [ "${{ inputs.serial-packages }}" = "true" ] && PFLAG="-p 1"
+          echo "go test flags: ${PFLAG:-<default parallel>}"
+          out=$(go test ${{ inputs.test-path }} $PFLAG -run '${{ inputs.test-pattern }}' -race -vet=off -v 2>&1)
           code=$?
           set -e
           echo "$out"
