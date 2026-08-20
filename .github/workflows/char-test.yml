@@ -78,7 +78,13 @@ jobs:
           CANDIDATE_REF: ${{ github.event.pull_request.head.ref }}
           GATE_TOKEN: ${{ secrets.checkout_token || github.token }}
         run: |
-          ref="$(bash .gate/gate/resolve-migration-ref.sh)"; rc=$?
+          # ปิด -e เพื่ออ่าน exit code ของสคริปต์ — GitHub Actions รัน `bash -e` โดยเนื้อหา
+          # (ถ้าไม่ปิด exit 3 จะทำให้ step terminate ทันทีก่อนขึ้น $GITHUB_OUTPUT)
+          set +e
+          ref="$(bash .gate/gate/resolve-migration-ref.sh)"
+          rc=$?
+          set -e
+          if [ -z "$ref" ]; then ref=main; rc=3; fi
           echo "value=$ref" >> "$GITHUB_OUTPUT"
           echo "::notice::char-test schema ref = $ref"
           if [ "$rc" = "3" ]; then
