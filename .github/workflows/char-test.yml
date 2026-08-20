@@ -81,12 +81,16 @@ jobs:
           # ปิด -e เพื่ออ่าน exit code ของสคริปต์ — GitHub Actions รัน `bash -e` โดยเนื้อหา
           # (ถ้าไม่ปิด exit 3 จะทำให้ step terminate ทันทีก่อนขึ้น $GITHUB_OUTPUT)
           set +e
-          ref="$(bash .gate/gate/resolve-migration-ref.sh)"
+          errlog="$(mktemp)"
+          ref="$(bash .gate/gate/resolve-migration-ref.sh 2>"$errlog")"
           rc=$?
           set -e
+          cat "$errlog" >&2   # diagnostic ของสคริปต์ (รวม sha ถ้ามี) ยังโผล่ใน log ปกติ
+          sha="$(grep -o 'sha=[0-9a-f]\{7\}' "$errlog" | head -1 | cut -d= -f2 || true)"
+          rm -f "$errlog"
           if [ -z "$ref" ]; then ref=main; rc=3; fi
           echo "value=$ref" >> "$GITHUB_OUTPUT"
-          echo "::notice::char-test schema ref = $ref"
+          echo "::notice::char-test schema ref = $ref${sha:+ (sha=$sha)}"
           if [ "$rc" = "3" ]; then
             echo "::warning::ถาม branch ของ db-migration-service ไม่ได้ (token/เครือข่าย) — ใช้ main ตามค่าเดิม"
           elif [ "$ref" != "main" ]; then

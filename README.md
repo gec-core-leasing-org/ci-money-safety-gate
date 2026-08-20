@@ -25,4 +25,16 @@ char-test สร้าง schema+seed จาก `db-migration-service` โดย
 ให้ตรงกับ branch ของ service เป๊ะ ๆ · เมื่อ gate รันด้วย ref ที่ไม่ใช่ main จะขึ้น warning
 เตือนว่าต้อง merge `db-migration-service` ก่อน merge PR ของ service
 
+**เมื่อถาม remote ไม่ได้ (auth ล้ม/timeout/เครือข่าย):** ได้ `main` เสมอ พร้อม warning
+`ถาม branch ของ db-migration-service ไม่ได้ (token/เครือข่าย) — ใช้ main ตามค่าเดิม` — คนละข้อความ
+กับ warning "ยังไม่ merge" ข้างต้น (กรณีนี้คือ resolve ไม่สำเร็จ ไม่ใช่ resolve ได้ ref ที่ไม่ใช่ main)
+
+**event ที่ไม่ใช่ pull_request** (push, schedule, workflow_dispatch โดยไม่ระบุ `db-migration-ref`)
+จะได้ `main` เสมอ เพราะ `github.event.pull_request.head.ref` ว่าง — ไม่มีการถาม remote เลย
+
+**`checkout_token`:** ต้องตั้ง secret `checkout_token` ให้มีสิทธิ์ contents:read บน
+`db-migration-service` (private repo) มิฉะนั้น `git ls-remote` จะ auth ล้มเงียบ ๆ ทุก PR แล้ว
+fallback เป็น `main` โดยไม่มีใครสังเกต (ได้ warning ก็จริง แต่ถ้าไม่มีใครอ่าน log จะไม่รู้ตัว) —
+ไม่ตั้ง secret นี้ = gate ใช้ `github.token` แทนซึ่งไม่มีสิทธิ์ข้าม repo
+
 ตรรกะอยู่ใน `gate/resolve-migration-ref.sh` · เทสต์ `gate/tests/test-resolve-migration-ref.sh`
