@@ -6,7 +6,7 @@ on:
       dsn-env-name: { required: true,  type: string }   # e.g. FA_CHARTEST_DSN
       test-pattern: { required: false, type: string, default: "TestChar" }
       test-path:    { required: false, type: string, default: "./datastore/" }
-      db-migration-ref: { required: false, type: string, default: "main" }
+      db-migration-ref: { required: false, type: string, default: "" }
       harness-ref:      { required: false, type: string, default: "main" }
       serial-packages:
         # รัน `go test` ทีละ package (`-p 1`) แทนที่จะปล่อยให้ Go รันขนานตามจำนวน CPU
@@ -68,10 +68,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4          # caller's own repo (char test in datastore/)
       - run: git config core.quotePath false
+      - name: checkout gate scripts
+        uses: actions/checkout@v4
+        with: { repository: gec-core-leasing-org/ci-money-safety-gate, ref: v1, path: .gate }
+      - name: resolve db-migration ref
+        id: ref
+        env:
+          INPUT_REF: ${{ inputs.db-migration-ref }}
+          CANDIDATE_REF: ${{ github.event.pull_request.head.ref }}
+          GATE_TOKEN: ${{ secrets.checkout_token || github.token }}
+        run: |
+          # ปิด -e เพื่ออ่าน exit code ของสคริปต์ — GitHub Actions รัน `bash -e` โดยเนื้อหา
+          # (ถ้าไม่ปิด exit 3 จะทำให้ step terminate ทันทีก่อนขึ้น $GITHUB_OUTPUT)
+          set +e
+          ref="$(bash .gate/gate/resolve-migration-ref.sh)"
+          rc=$?
+          set -e
+          if [ -z "$ref" ]; then ref=main; rc=3; fi
+          echo "value=$ref" >> "$GITHUB_OUTPUT"
+          echo "::notice::char-test schema ref = $ref"
+          if [ "$rc" = "3" ]; then
+            echo "::warning::ถาม branch ของ db-migration-service ไม่ได้ (token/เครือข่าย) — ใช้ main ตามค่าเดิม"
+          elif [ "$ref" != "main" ]; then
+            echo "::warning::gate นี้เขียวด้วย migration ที่ยังไม่ขึ้น main ($ref) — ต้อง merge db-migration-service ก่อน merge PR นี้"
+          fi
       - uses: actions/checkout@v4          # schema owner
         with:
           repository: gec-core-leasing-org/db-migration-service
-          ref: ${{ inputs.db-migration-ref }}
+          ref: ${{ steps.ref.outputs.value }}
           path: .db-migration
           token: ${{ secrets.checkout_token || github.token }}
       - uses: actions/checkout@v4          # apply tool (cmd/apply)
