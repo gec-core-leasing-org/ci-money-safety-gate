@@ -10,8 +10,10 @@
 #   GATE_TOKEN          token สำหรับ ls-remote (db-migration-service เป็น private)
 #   GATE_LSREMOTE_FILE  เทสต์เท่านั้น: ไฟล์ที่มีรูปแบบเดียวกับผลลัพธ์ git ls-remote --heads
 #
-# stdout: ref ที่เลือก
-# exit:   0 = resolve ปกติ · 3 = ถาม remote ไม่ได้ จึง fallback main (workflow ควรเตือน)
+# stdout: ref ที่เลือก (บรรทัดเดียว)
+# stderr: diagnostic เท่านั้น (error จาก ls-remote / sha ของ branch ที่เลือกไว้ไล่ย้อนได้)
+# exit:   0 = resolve ปกติ (รวมกรณี remote ตอบสำเร็จแต่ไม่มี branch คู่ — ยังคง fallback main)
+#         3 = ถาม remote ไม่ได้ (ล้ม/timeout) จึง fallback main (workflow ควรเตือน)
 set -uo pipefail
 
 input="${INPUT_REF:-}"
@@ -19,10 +21,10 @@ cand="${CANDIDATE_REF:-}"
 repo="${REPO_URL:-https://github.com/gec-core-leasing-org/db-migration-service}"
 
 # 1) caller ระบุมาเอง — ไม่ต้องถาม remote
-if [[ -n "$input" ]]; then echo "$input"; exit 0; fi
+if [[ -n "$input" ]]; then printf '%s\n' "$input"; exit 0; fi
 
 # 2) ไม่ใช่ PR (push/schedule) หรือ candidate คือ main อยู่แล้ว
-if [[ -z "$cand" || "$cand" == "main" ]]; then echo main; exit 0; fi
+if [[ -z "$cand" || "$cand" == "main" ]]; then printf '%s\n' main; exit 0; fi
 
 # 3) ถามรายชื่อ branch จาก remote (หรือแฟ้มจำลองตอนเทสต์)
 #
@@ -38,33 +40,48 @@ if [[ -z "$cand" || "$cand" == "main" ]]; then echo main; exit 0; fi
 #
 # ทางแก้ที่ถูกต้อง: รัน `git ls-remote` จาก scratch dir ที่ไม่ใช่ working tree ของ repo ที่
 # checkout ไว้เลย ไม่มี local `.git/config` ให้ค้นพบ จึงไม่มี extraheader เดิมให้ชนกับของเรา
+#
+# ส่ง header ผ่าน env (GIT_CONFIG_COUNT/KEY/VALUE) แทน `-c` ทาง argv — `-c` โผล่ใน
+# `/proc/<pid>/cmdline` ซึ่งอ่านได้จาก process อื่นบนเครื่องที่ใช้ร่วมกัน (self-hosted runner)
 if [[ -n "${GATE_LSREMOTE_FILE:-}" ]]; then
-  if [[ ! -f "$GATE_LSREMOTE_FILE" ]]; then echo main; exit 3; fi
+  if [[ ! -f "$GATE_LSREMOTE_FILE" ]]; then printf '%s\n' main; exit 3; fi
   branches="$(cat "$GATE_LSREMOTE_FILE")"
+  rc=0
 else
   errfile="$(mktemp)"
   scratch="$(mktemp -d)"
   trap 'rm -f "$errfile"; rm -rf "$scratch"' EXIT
   if [[ -n "${GATE_TOKEN:-}" ]]; then
     hdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GATE_TOKEN" | base64 | tr -d '\n')"
-    branches="$(cd "$scratch" && git -c "http.https://github.com/.extraheader=$hdr" ls-remote --heads "$repo" 2>"$errfile")"
+    branches="$(cd "$scratch" && GIT_TERMINAL_PROMPT=0 GIT_CONFIG_COUNT=1 \
+      GIT_CONFIG_KEY_0="http.https://github.com/.extraheader" \
+      GIT_CONFIG_VALUE_0="$hdr" \
+      timeout 30 git ls-remote --heads "$repo" 2>"$errfile")"
     rc=$?
   else
-    branches="$(cd "$scratch" && git ls-remote --heads "$repo" 2>"$errfile")"
+    branches="$(cd "$scratch" && GIT_TERMINAL_PROMPT=0 timeout 30 git ls-remote --heads "$repo" 2>"$errfile")"
     rc=$?
   fi
   if [[ "$rc" -ne 0 ]]; then
+    # timeout(1) คืน 124 เมื่อ ls-remote ค้างเกิน 30s — ถือเป็นเส้นทางเดียวกับ ls-remote ล้ม
+    if [[ "$rc" -eq 124 ]]; then
+      printf 'resolve-migration-ref: git ls-remote timed out after 30s\n' >&2
+    fi
     # เก็บ stderr จริงไว้แล้ว — ห้ามกลืนทิ้ง (2>/dev/null เดิมทำให้เดา root cause ไม่ได้)
     # พิมพ์ทาง stderr ของสคริปต์เท่านั้น (ห้ามปนกับ stdout ซึ่งเป็นค่า ref)
     sed 's/^/resolve-migration-ref: /' "$errfile" >&2
-    echo main; exit 3
+    printf '%s\n' main; exit 3
   fi
 fi
-if [[ -z "$branches" ]]; then echo main; exit 3; fi
+
+# remote ตอบสำเร็จ (rc=0) แต่ไม่มี branch เลย — ไม่ใช่ "ถาม remote ไม่ได้" จึง exit 0
+if [[ -z "$branches" ]]; then printf '%s\n' main; exit 0; fi
 
 # 4) เทียบชื่อแบบ literal ทั้งสตริง (awk เทียบ field ตรง ๆ ไม่ใช่ regex)
 if awk -v want="refs/heads/$cand" '$2 == want { found = 1 } END { exit !found }' <<<"$branches"; then
-  echo "$cand"; exit 0
+  sha="$(awk -v want="refs/heads/$cand" '$2 == want { print $1; exit }' <<<"$branches")"
+  printf 'resolve-migration-ref: ref=%s sha=%s\n' "$cand" "${sha:0:7}" >&2
+  printf '%s\n' "$cand"; exit 0
 fi
 
-echo main; exit 0
+printf '%s\n' main; exit 0
