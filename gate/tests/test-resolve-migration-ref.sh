@@ -27,4 +27,29 @@ run "ชื่อ branch มี . และ + -> match แบบ literal" ""    
 # "fix/aXbc" จะ match ถ้าเผลอเอา "fix/a.b+c" ไปใช้เป็น regex (. = อักขระใดก็ได้, b+ = b หนึ่งตัวขึ้นไป)
 run "สตริงที่ match ได้ถ้าใช้ regex -> ต้องเป็น main" ""            "fix/aXbc"                  "$tmp/branches.txt"   "main"                      0
 
+# ls-remote จริงที่ auth ไม่ผ่าน (repo private ของจริง, ไม่ตั้ง GATE_TOKEN, ไม่ตั้ง GATE_LSREMOTE_FILE)
+# ต้องทนทั้งสองกรณีของเครื่องที่รันเทสต์: มีเน็ต (repo private -> auth ล้ม) หรือไม่มีเน็ต
+# (resolve/connect ล้ม) — ทั้งสองทางต้องได้ stdout=main, exit=3, และมี diagnostic โผล่ทาง stderr
+# (ก่อนหน้านี้ 2>/dev/null กลืน stderr ทิ้งไปหมด ทำให้เดา root cause ไม่ได้)
+#
+# `env -i` + HOME ว่าง + GIT_CONFIG_NOSYSTEM=1: ตัด credential helper แวดล้อม (เช่น
+# `gh auth` ของเครื่อง dev) ออกก่อน ไม่งั้นเครื่องที่ล็อกอิน gh ไว้แล้วจะ ls-remote ผ่านจริง
+# (มี access เข้า org) ทำให้เคสนี้ไม่ deterministic — พิสูจน์แล้วว่าไม่มี ambient credential
+# ก็ยังคง auth ล้มแบบเดียวกับที่ยืนยันบน gec-dev-app (SSH probe รอบก่อน): "could not read
+# Username ... terminal prompts disabled"
+stderr_file="$tmp/real-remote.stderr"
+homeless="$tmp/no-ambient-creds-home"; mkdir -p "$homeless"
+out="$(env -i PATH="$PATH" HOME="$homeless" GIT_CONFIG_NOSYSTEM=1 GIT_TERMINAL_PROMPT=0 \
+  INPUT_REF="" CANDIDATE_REF="feature/app-loan-executed" GATE_LSREMOTE_FILE="" \
+  REPO_URL="https://github.com/gec-core-leasing-org/db-migration-service" \
+  bash "$gate/resolve-migration-ref.sh" 2>"$stderr_file")"
+g=$?
+if [[ "$out" == "main" && "$g" == "3" && -s "$stderr_file" ]]; then
+  echo "PASS ls-remote จริงล้ม (repo private, ไม่มี token) -> main + exit 3 + diagnostic บน stderr"
+  pass=$((pass+1))
+else
+  echo "FAIL ls-remote จริงล้ม -> main + exit 3 + diagnostic บน stderr (got '$out' exit $g, stderr size $(wc -c <"$stderr_file"))"
+  fail=$((fail+1))
+fi
+
 echo "== $pass passed / $fail failed =="; [[ "$fail" == 0 ]]

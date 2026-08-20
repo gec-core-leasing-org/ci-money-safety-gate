@@ -25,13 +25,31 @@ if [[ -n "$input" ]]; then echo "$input"; exit 0; fi
 if [[ -z "$cand" || "$cand" == "main" ]]; then echo main; exit 0; fi
 
 # 3) ถามรายชื่อ branch จาก remote (หรือแฟ้มจำลองตอนเทสต์)
+#
+# ห้ามฝัง token ใน URL (x-access-token:$TOKEN@...) — actions/checkout ทิ้ง
+# `http.https://github.com/.extraheader` ไว้ใน git config ของ workspace ที่ checkout
+# แล้ว header นั้นทับ credential ที่ฝังใน URL จน auth ล้ม (พิสูจน์ซ้ำได้ 100% ในเครื่อง)
+# ทางแก้: ตั้ง extraheader คีย์เดียวกันเป๊ะ ๆ ผ่าน `-c` ให้ทับของเดิมแทน
 if [[ -n "${GATE_LSREMOTE_FILE:-}" ]]; then
   if [[ ! -f "$GATE_LSREMOTE_FILE" ]]; then echo main; exit 3; fi
   branches="$(cat "$GATE_LSREMOTE_FILE")"
 else
-  url="$repo"
-  if [[ -n "${GATE_TOKEN:-}" ]]; then url="https://x-access-token:${GATE_TOKEN}@${repo#https://}"; fi
-  if ! branches="$(git ls-remote --heads "$url" 2>/dev/null)"; then echo main; exit 3; fi
+  errfile="$(mktemp)"
+  trap 'rm -f "$errfile"' EXIT
+  if [[ -n "${GATE_TOKEN:-}" ]]; then
+    hdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GATE_TOKEN" | base64 | tr -d '\n')"
+    branches="$(git -c "http.https://github.com/.extraheader=$hdr" ls-remote --heads "$repo" 2>"$errfile")"
+    rc=$?
+  else
+    branches="$(git ls-remote --heads "$repo" 2>"$errfile")"
+    rc=$?
+  fi
+  if [[ "$rc" -ne 0 ]]; then
+    # เก็บ stderr จริงไว้แล้ว — ห้ามกลืนทิ้ง (2>/dev/null เดิมทำให้เดา root cause ไม่ได้)
+    # พิมพ์ทาง stderr ของสคริปต์เท่านั้น (ห้ามปนกับ stdout ซึ่งเป็นค่า ref)
+    sed 's/^/resolve-migration-ref: /' "$errfile" >&2
+    echo main; exit 3
+  fi
 fi
 if [[ -z "$branches" ]]; then echo main; exit 3; fi
 
