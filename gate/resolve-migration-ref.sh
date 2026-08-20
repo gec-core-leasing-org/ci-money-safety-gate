@@ -29,19 +29,28 @@ if [[ -z "$cand" || "$cand" == "main" ]]; then echo main; exit 0; fi
 # ห้ามฝัง token ใน URL (x-access-token:$TOKEN@...) — actions/checkout ทิ้ง
 # `http.https://github.com/.extraheader` ไว้ใน git config ของ workspace ที่ checkout
 # แล้ว header นั้นทับ credential ที่ฝังใน URL จน auth ล้ม (พิสูจน์ซ้ำได้ 100% ในเครื่อง)
-# ทางแก้: ตั้ง extraheader คีย์เดียวกันเป๊ะ ๆ ผ่าน `-c` ให้ทับของเดิมแทน
+#
+# ทางแก้รอบแรก (ตั้ง `-c http.https://github.com/.extraheader=...` ให้ "ทับ" ของเดิม) ไม่พอ:
+# `http.extraHeader` เป็น multi-valued config — ค่าจาก `-c` ถูก**เพิ่ม**เข้าไปในลิสต์ ไม่ได้
+# แทนที่ค่าที่มาจาก local git config ของ repo ที่ checkout ไว้ ผลคือ git ส่ง Authorization
+# header สองใบ แล้วโดน GitHub ปฏิเสธ (`remote: Duplicate header: "Authorization"`, HTTP 400)
+# — พิสูจน์จาก log จริงบน CI (master-service PR #70, run 32349691918)
+#
+# ทางแก้ที่ถูกต้อง: รัน `git ls-remote` จาก scratch dir ที่ไม่ใช่ working tree ของ repo ที่
+# checkout ไว้เลย ไม่มี local `.git/config` ให้ค้นพบ จึงไม่มี extraheader เดิมให้ชนกับของเรา
 if [[ -n "${GATE_LSREMOTE_FILE:-}" ]]; then
   if [[ ! -f "$GATE_LSREMOTE_FILE" ]]; then echo main; exit 3; fi
   branches="$(cat "$GATE_LSREMOTE_FILE")"
 else
   errfile="$(mktemp)"
-  trap 'rm -f "$errfile"' EXIT
+  scratch="$(mktemp -d)"
+  trap 'rm -f "$errfile"; rm -rf "$scratch"' EXIT
   if [[ -n "${GATE_TOKEN:-}" ]]; then
     hdr="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GATE_TOKEN" | base64 | tr -d '\n')"
-    branches="$(git -c "http.https://github.com/.extraheader=$hdr" ls-remote --heads "$repo" 2>"$errfile")"
+    branches="$(cd "$scratch" && git -c "http.https://github.com/.extraheader=$hdr" ls-remote --heads "$repo" 2>"$errfile")"
     rc=$?
   else
-    branches="$(git ls-remote --heads "$repo" 2>"$errfile")"
+    branches="$(cd "$scratch" && git ls-remote --heads "$repo" 2>"$errfile")"
     rc=$?
   fi
   if [[ "$rc" -ne 0 ]]; then
