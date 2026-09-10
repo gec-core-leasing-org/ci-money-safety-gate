@@ -91,6 +91,10 @@ jobs:
         run: bash .gate/gate/check-needs-test.sh
       - name: check sqli-pattern
         run: bash .gate/gate/check-sqli.sh
+      - name: check hardcoded-secrets (ทั้ง tree ไม่ใช่แค่ diff)
+        # gitleaks ข้างล่างเป็น ratchet (BASE..HEAD) จึงเห็นเฉพาะ commit ใหม่
+        # ด่านนี้สแกนไฟล์ที่ track ไว้ทั้งหมด เพื่อจับ token ที่ commit ค้างไว้ก่อนหน้า
+        run: bash .gate/gate/check-secrets.sh
       - name: setup go
         uses: actions/setup-go@v5
         with:
