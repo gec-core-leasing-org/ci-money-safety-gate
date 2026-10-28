@@ -38,6 +38,19 @@ on:
         required: false
         type: string
         default: '["self-hosted","org-linux"]'
+      test-timeout:
+        # ส่งเป็น `go test -timeout <ค่า>` (เช่น "25m") — ว่าง = ไม่ใส่ธง = เพดาน 10m ของ Go ต่อ test binary
+        #
+        # ทำไมถึงต้องมี: เพดาน 10m ของ Go นับ**ต่อ package** ไม่ใช่ต่อเทสต์ package ที่มีเทสต์ DB
+        # เยอะชนได้ทั้งที่ไม่มีเทสต์ค้าง — financial-accounting-service/service (~1,800 เทสต์)
+        # ใช้ 517s ถึง >600s บน self-hosted (เครื่อง APP ของ gec-dev) แต่ 139s บน Mac dev
+        # (ช้ากว่า ~4 เท่าเท่ากันทั้งเทสต์ที่แตะ DB และที่ไม่แตะ → CPU ของเครื่อง ไม่ใช่ DB/`-race`)
+        # อาการ: `panic: test timed out after 10m0s` แดงแบบสุ่มตามโหลดของเครื่อง
+        #
+        # ⚠️ ต้องต่ำกว่า `timeout-minutes` ของ job เสมอ ไม่งั้น job ถูก cancel ก่อนได้เห็น stack ของ go test
+        required: false
+        type: string
+        default: ""
       timeout-minutes:
         # default 360 = ค่า default ของ GitHub เอง → ไม่เปลี่ยนพฤติกรรมของ caller เดิม
         # caller ที่ย้ายไป self-hosted ควรตั้งให้ต่ำลง เพราะ runner มีแค่ 2 ตัว
@@ -135,8 +148,11 @@ jobs:
           # serial-packages=true → `-p 1` (ทีละ package) · false → ไม่ใส่อะไรเลย = พฤติกรรมเดิม
           PFLAG=""
           [ "${{ inputs.serial-packages }}" = "true" ] && PFLAG="-p 1"
-          echo "go test flags: ${PFLAG:-<default parallel>}"
-          out=$(go test ${{ inputs.test-path }} $PFLAG -run '${{ inputs.test-pattern }}' -race -vet=off -v 2>&1)
+          # test-timeout ว่าง → ไม่ใส่ธง = เพดาน 10m ของ Go เหมือนเดิม
+          TFLAG=""
+          [ -n "${{ inputs.test-timeout }}" ] && TFLAG="-timeout ${{ inputs.test-timeout }}"
+          echo "go test flags: ${PFLAG:-<default parallel>} ${TFLAG:-<default 10m timeout>}"
+          out=$(go test ${{ inputs.test-path }} $PFLAG $TFLAG -run '${{ inputs.test-pattern }}' -race -vet=off -v 2>&1)
           code=$?
           set -e
           echo "$out"
